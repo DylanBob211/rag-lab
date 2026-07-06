@@ -66,6 +66,10 @@ az cosmosdb create \
 az cosmosdb sql database create \
   --account "$COSMOS" --resource-group "$RG" --name "ragdb"
 
+az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d ragdb -n docs \
+  --partition-key-path /id \
+  --vector-embeddings '{"vectorEmbeddings":[{"path":"/embedding","dataType":"float32","distanceFunction":"cosine","dimensions":1536}]}' \
+  --idx '{"indexingMode":"consistent","automatic":true,"includedPaths":[{"path":"/*"}],"excludedPaths":[{"path":"/embedding/*"}],"vectorIndexes":[{"path":"/embedding","type":"diskANN"}]}'
 
 az monitor app-insights component create \
   --app ai200-ai --resource-group "$RG" --location "$LOC"
