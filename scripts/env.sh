@@ -9,6 +9,10 @@ export LOC=swedencentral
 export AOAI=ai200-aoai-${SUFFIX}
 export AOAI_SKU=S0
 export COSMOS=ai200-cosmos-${SUFFIX}
+export APPINSIGHTS=ai200-ai
+export KV=ai200-kv-${SUFFIX}
+export APPCONFIG=ai200-appconfig-${SUFFIX}
+
 # campi deployment-name | model | version | format | sku | capacity
 AOAI_DEPLOYMENTS=(
   "embedder|text-embedding-3-small|1|OpenAI|GlobalStandard|120"

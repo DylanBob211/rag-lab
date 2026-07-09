@@ -31,7 +31,7 @@ preflight() {
 
 preflight
 
-
+log "Registering needed providers"
 for ns in CognitiveServices DocumentDb Insights OperationalInsights; do
   az provider register --namespace Microsoft.$ns --wait
 done
@@ -40,6 +40,17 @@ log "Creating resource group $RG in $LOC..."
 az group create \
   --name "$RG" \
   --location "$LOC"
+
+
+log "Creating Keyvault $KV"
+az keyvault create \
+  --resource-group "$RG" --location "$LOC" --name "$KV" \
+  --enable-rbac-authorization true
+
+log "Creating Appconfig $APPCONFIG"
+az appconfig create \
+  --resource-group "$RG" --location "$LOC" --name "$APPCONFIG" --sku free \
+  --disable-local-auth true
 
 log "Creating Azure OpenAI account $AOAI (~1 min)..."
 az cognitiveservices account create \
@@ -72,6 +83,6 @@ az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d ragdb -n docs \
   --idx '{"indexingMode":"consistent","automatic":true,"includedPaths":[{"path":"/*"}],"excludedPaths":[{"path":"/embedding/*"}],"vectorIndexes":[{"path":"/embedding","type":"diskANN"}]}'
 
 az monitor app-insights component create \
-  --app ai200-ai --resource-group "$RG" --location "$LOC"
+  --app "$APPINSIGHTS" --resource-group "$RG" --location "$LOC"
   
 log "Done. Everything is in resource group $RG."
