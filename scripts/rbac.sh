@@ -16,28 +16,25 @@ az cosmosdb sql role assignment create \
 
 AOAI_ID=$(az cognitiveservices account show --name "$AOAI" --resource-group "$RG" --query id -o tsv)
 
-log "Assigning user role to Azure OpenAI"
+log "Assigning user role for Azure OpenAI"
 az role assignment create \
   --role "Cognitive Services OpenAI User" --scope "$AOAI_ID" --assignee "$ME"
 
 
 KV_ID=$(az keyvault show --name "$KV" --resource-group "$RG" --query id -o tsv)
 
-log "Assigning secret user role to KV"
+log "Assigning secret officer role for KV"
 az role assignment create \
   --role "Key Vault Secrets Officer" --scope "$KV_ID" --assignee "$ME"
 
 APPCONFIG_ID=$(az appconfig show --name "$APPCONFIG" --resource-group "$RG" --query id -o tsv)
 
-log "Assigning configuration data owner role to APPCONFIG"
+log "Assigning configuration data owner role for APPCONFIG"
 az role assignment create \
   --role "App Configuration Data Owner" --scope "$APPCONFIG_ID" --assignee "$ME"
 
-COSMOS_ENDPOINT=$(az cosmosdb show --name "$COSMOS" --resource-group "$RG" --query documentEndpoint -o tsv)
-AOAI_ENDPOINT=$(az cognitiveservices account show --name "$AOAI" --resource-group "$RG" --query properties.endpoint -o tsv)
-az appconfig kv set -n "$APPCONFIG" --key COSMOS_ENDPOINT --value "$COSMOS_ENDPOINT" --yes
-az appconfig kv set -n "$APPCONFIG" --key AOAI_ENDPOINT --value "$AOAI_ENDPOINT" --yes
-
-APPINSIGHTS_CS=$(az monitor app-insights component show --app "$APPINSIGHTS" --resource-group "$RG" --query connectionString -o tsv)
-SECRET_URI=$(az keyvault secret set --vault-name "$KV" --name appinsights-cs --value "$APPINSIGHTS_CS" --query id -o tsv)
-az appconfig kv set-keyvault -n "$APPCONFIG" --key APPINSIGHTS_CS --secret-identifier "$SECRET_URI" --yes
+log "Creating access policy for Redis"
+az redisenterprise database access-policy-assignment create -g "$RG" \
+  --cluster-name "$REDIS" --database-name default \
+  --access-policy-assignment-name me --access-policy-name default \
+  --no-wait --object-id "$ME"

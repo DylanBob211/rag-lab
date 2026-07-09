@@ -4,9 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/env.sh"
 
-az account set --subscription "$SUBSCRIPTION_ID"
-az config set extension.dynamic_install_allow_preview=true
-
 echo "Deploying to: $(az account show --query name -o tsv)"
 
 log() { echo "PROVISION ==> $*" >&2; }
@@ -32,7 +29,7 @@ preflight() {
 preflight
 
 log "Registering needed providers"
-for ns in CognitiveServices DocumentDb Insights OperationalInsights; do
+for ns in CognitiveServices DocumentDb Insights OperationalInsights Cache KeyVault AppConfiguration; do
   az provider register --namespace Microsoft.$ns --wait
 done
 
@@ -82,7 +79,13 @@ az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d ragdb -n docs \
   --vector-embeddings '{"vectorEmbeddings":[{"path":"/embedding","dataType":"float32","distanceFunction":"cosine","dimensions":1536}]}' \
   --idx '{"indexingMode":"consistent","automatic":true,"includedPaths":[{"path":"/*"}],"excludedPaths":[{"path":"/embedding/*"}],"vectorIndexes":[{"path":"/embedding","type":"diskANN"}]}'
 
+log "Creating Application Insights $APPINSIGHTS"
 az monitor app-insights component create \
   --app "$APPINSIGHTS" --resource-group "$RG" --location "$LOC"
+
+log "Creating Redis $REDIS"
+az redisenterprise create -n "$REDIS" -g "$RG" --sku "Balanced_B0" --location "$LOC"
+az redisenterprise database update -g "$RG" --cluster-name "$REDIS" \
+  --client-protocol Encrypted --access-keys-authentication Disabled
   
-log "Done. Everything is in resource group $RG."
+log "Provisioning done."
