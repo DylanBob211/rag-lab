@@ -4,21 +4,28 @@ from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import AzureOpenAI
 from azure.monitor.opentelemetry import configure_azure_monitor
+from azure.appconfiguration.provider import load
+from redis_entraid.cred_provider import create_from_default_azure_credential
+from redis.client import Redis
 
-configure_azure_monitor()
+__all__ = ["aoai", "redis_client", "container"]
 
-aoai_endpoint = environ["AOAI_ENDPOINT"]
-cosmosdb_endpoint = environ["COSMOSDB_ENDPOINT"]
+_cred = DefaultAzureCredential()
+_configs = load(environ["APPCONFIG_ENDPOINT"], credential=_cred, keyvault_credential=_cred)
 
-cred = DefaultAzureCredential()
+configure_azure_monitor(connection_string=_configs["APPINSIGHTS_CS"])
 
 aoai = AzureOpenAI(
-  azure_endpoint=aoai_endpoint, 
-  azure_ad_token_provider=get_bearer_token_provider(cred, "https://cognitiveservices.azure.com/.default"), 
+  azure_endpoint=_configs["AOAI_ENDPOINT"], 
+  azure_ad_token_provider=get_bearer_token_provider(_cred, "https://cognitiveservices.azure.com/.default"), 
   api_version="2024-10-21"
 )
 
-cosmos_client = CosmosClient(cosmosdb_endpoint, cred)
+_cosmos_client = CosmosClient(_configs["COSMOS_ENDPOINT"], _cred)
 
-db = cosmos_client.get_database_client("ragdb")
-container = db.get_container_client("docs")
+_redis_cred_provider = create_from_default_azure_credential(
+    scopes=("https://redis.azure.com/.default",)
+)
+redis_client = Redis(host=_configs["REDIS_HOST"], port=10000, ssl=True, credential_provider=_redis_cred_provider)
+_db = _cosmos_client.get_database_client("ragdb")
+container = _db.get_container_client("docs")
