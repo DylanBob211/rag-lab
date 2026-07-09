@@ -3,7 +3,9 @@ from os import environ
 from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from openai import AzureOpenAI
+from azure.monitor.opentelemetry import configure_azure_monitor
 
+configure_azure_monitor()
 
 aoai_endpoint = environ["AOAI_ENDPOINT"]
 cosmosdb_endpoint = environ["COSMOSDB_ENDPOINT"]
