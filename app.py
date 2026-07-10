@@ -56,3 +56,8 @@ def ask(question: str) -> Answer:
         answer_text = answer.choices[0].message.content or ""
         semantic_cache.store(prompt=question, response=answer_text, vector=qv)
         return Answer(answer=answer_text, cached=False)
+
+
+@app.get("/health")
+def health_check() -> dict:
+    return {"status": "ok"}
