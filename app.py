@@ -2,11 +2,20 @@ from embed import embed
 from config import container, aoai, semantic_cache
 from opentelemetry import trace
 import textwrap
+from fastapi import FastAPI
+from pydantic import BaseModel
 
+app = FastAPI()
 tracer = trace.get_tracer(__name__)
 
 
-def retrieve(question):
+class Answer(BaseModel):
+    answer: str
+    cached: bool
+
+
+@app.get("/ask")
+def ask(question: str) -> Answer:
     with tracer.start_as_current_span("rag.query") as span:
         span.set_attribute("rag.question", question)
         qv = embed(question)
@@ -14,7 +23,7 @@ def retrieve(question):
             hit = semantic_cache.check(prompt=question, vector=qv)
             span.set_attribute("redis.cache_hit", bool(hit))
             if hit:
-                return {"answer": hit[0]["response"], "cached": True}
+                return Answer(answer=hit[0]["response"], cached=True)
 
         with tracer.start_as_current_span("cosmos.vector_search"):
             items = list(
@@ -44,10 +53,6 @@ def retrieve(question):
                     },
                 ],
             )
-        answer_text = answer.choices[0].message.content
+        answer_text = answer.choices[0].message.content or ""
         semantic_cache.store(prompt=question, response=answer_text, vector=qv)
-        return {"answer": answer_text, "cached": False}
-
-
-answer = retrieve("How do I store passwords?")
-print(answer)
+        return Answer(answer=answer_text, cached=False)
