@@ -1,4 +1,4 @@
-from embed import embed;
+from embed import embed
 from config import container
 
 DOCS = [
@@ -8,6 +8,6 @@ DOCS = [
 ]
 
 for id, text in DOCS:
-  container.upsert_item({ "id": id, "text": text, "embedding": embed(text)})
+    container.upsert_item({"id": id, "text": text, "embedding": embed(text)})
 
 print("ingested", len(DOCS), "docs")
