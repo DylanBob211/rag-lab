@@ -16,6 +16,9 @@ export APPINSIGHTS=ai200-ai
 export KV=ai200-kv-${SUFFIX}
 export APPCONFIG=ai200-appconfig-${SUFFIX}
 export REDIS=ai200-redis-${SUFFIX}
+export ACR=ai200acr${SUFFIX}          
+export ACA_ENV=ai200-aca-env          
+export APP=rag-api                    
 
 # campi deployment-name | model | version | format | sku | capacity
 AOAI_DEPLOYMENTS=(
