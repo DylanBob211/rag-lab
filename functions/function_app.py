@@ -1,5 +1,5 @@
 import azure.functions as func
-from config import sbus_queue, download_text, embed_batch
+from config import sbus_queue, download_text, embed_batch, invalidate_cache
 from models import BlobEvent
 from chunking import chunk
 from db import (
@@ -32,6 +32,7 @@ def doc_sync(msg: func.ServiceBusMessage):
     if header and header["sequencer"] >= incoming_sequencer:
         return
 
+    invalidate_cache(docId)
     if event.eventType == "Microsoft.Storage.BlobCreated":
         text = download_text(event.data.url)
         chunks = chunk(text)

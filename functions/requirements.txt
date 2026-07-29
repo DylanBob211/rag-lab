@@ -7,3 +7,7 @@ azure-identity
 azure-monitor-opentelemetry
 azure-appconfiguration-provider
 openai
+redis
+redisvl
+redis-entraid
+sentence-transformers

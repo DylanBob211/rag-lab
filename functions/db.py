@@ -43,7 +43,7 @@ def upsert_chunks(docId: str, chunks: list[str], embeddings: list[list[float]]):
     for i, (c, e) in enumerate(zip(chunks, embeddings)):
         container.upsert_item(
             {
-                "id": f"{docId}#{i}",
+                "id": f"{docId}_{i}",
                 "docId": docId,
                 "chunkIndex": i,
                 "text": c,

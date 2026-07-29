@@ -46,6 +46,7 @@ _db = _cosmos_client.get_database_client(_cosmos_db_name)
 container = _db.get_container_client(_cosmos_container_name)
 
 semantic_cache = SemanticCache(
+    filterable_fields=[{"name": "doc_ids", "type": "tag"}],
     redis_client=_redis_client,
     vectorizer=CustomTextVectorizer(
         embed=lambda t: (

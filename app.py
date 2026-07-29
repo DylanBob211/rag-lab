@@ -29,8 +29,9 @@ def ask(question: str) -> Answer:
             items = list(
                 container.query_items(
                     query=textwrap.dedent("""
-                            SELECT TOP 3 c.text, VectorDistance(c.embedding, @qv) AS score 
+                            SELECT TOP 3 c.text, c.docId, VectorDistance(c.embedding, @qv) AS score 
                             FROM c 
+                            WHERE IS_DEFINED(c.embedding)
                             ORDER BY VectorDistance(c.embedding, @qv)
                             """),
                     parameters=[{"name": "@qv", "value": qv}],
@@ -39,6 +40,7 @@ def ask(question: str) -> Answer:
             )
         span.set_attribute("rag.chunks", len(items))
         context = "\n".join(item["text"] for item in items)
+        source_ids = list({i["docId"] for i in items})
         with tracer.start_as_current_span("aoai.chat"):
             answer = aoai.chat.completions.create(
                 model="chat",
@@ -54,7 +56,12 @@ def ask(question: str) -> Answer:
                 ],
             )
         answer_text = answer.choices[0].message.content or ""
-        semantic_cache.store(prompt=question, response=answer_text, vector=qv)
+        semantic_cache.store(
+            prompt=question,
+            response=answer_text,
+            vector=qv,
+            filters={"doc_ids": source_ids},
+        )
         return Answer(answer=answer_text, cached=False)
 
 
