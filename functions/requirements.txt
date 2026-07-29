@@ -1,0 +1,9 @@
+azure-functions
+tiktoken
+azure-storage-blob
+pydantic
+azure-cosmos
+azure-identity
+azure-monitor-opentelemetry
+azure-appconfiguration-provider
+openai

@@ -26,7 +26,10 @@ grant_data_roles() {
   case "$profile" in
     dev) kv_role="Key Vault Secrets Officer"
          appconf_role="App Configuration Data Owner"
-         cosmos_role="00000000-0000-0000-0000-000000000002" ;;  # Cosmos Data Contributor (write)
+         cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos Data Contributor (write)
+    func)kv_role="Key Vault Secrets User"
+         appconf_role="App Configuration Data Reader"  
+         cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos Data Contributor (write)
     app) kv_role="Key Vault Secrets User"
          appconf_role="App Configuration Data Reader"
          cosmos_role="00000000-0000-0000-0000-000000000001" ;;  # Cosmos Data Reader (read-only)
@@ -84,3 +87,19 @@ if [[ -n "${APP_MI:-}" && "$APP_MI" != "null" ]]; then
 else
   log "SKIP profilo 'app': la Container App '$APP' non esiste ancora (la crea provision.sh)."
 fi
+
+FUNC_MI=$(az functionapp show -n "$FUNCTIONAPP" -g "$RG" --query identity.principalId -o tsv)
+
+if [[ -n "${FUNC_MI:-}" && "$FUNC_MI" != "null" ]]; then
+  grant_data_roles "$FUNC_MI" ServicePrincipal func
+else
+  log "SKIP profilo 'func': la Container App '$FUNCTIONAPP' non esiste ancora (la crea provision.sh)."
+fi
+
+EVENT_GRID_MI=$(az eventgrid system-topic show -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" --query identity.principalId -o tsv)
+STORAGE_ACCOUNT_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RG" --query id -o tsv)
+SBUS_QUEUE_ID=$(az servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" --query id -o tsv)
+az role assignment create --assignee "$EVENT_GRID_MI" --scope "$SBUS_QUEUE_ID" --role "Azure Service Bus Data Sender"
+az role assignment create --assignee "$FUNC_MI" --scope "$SBUS_QUEUE_ID" --role "Azure Service Bus Data Receiver"
+az role assignment create --assignee "$FUNC_MI" --scope "$STORAGE_ACCOUNT_ID" --role "Storage Blob Data Reader"
+

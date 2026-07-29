@@ -39,8 +39,11 @@ _redis_client = Redis(
     ssl=True,
     credential_provider=_redis_cred_provider,
 )
-_db = _cosmos_client.get_database_client("ragdb")
-container = _db.get_container_client("docs")
+_cosmos_db_name = _configs["COSMOS_DB_NAME"]
+_cosmos_container_name = _configs["COSMOS_CONTAINER_NAME"]
+
+_db = _cosmos_client.get_database_client(_cosmos_db_name)
+container = _db.get_container_client(_cosmos_container_name)
 
 semantic_cache = SemanticCache(
     redis_client=_redis_client,

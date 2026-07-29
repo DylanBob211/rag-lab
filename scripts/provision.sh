@@ -36,7 +36,7 @@ preflight() {
 preflight
 
 log "Registering needed providers"
-for ns in CognitiveServices DocumentDb Insights OperationalInsights Cache KeyVault AppConfiguration ContainerRegistry App; do
+for ns in CognitiveServices DocumentDb Insights OperationalInsights Cache KeyVault AppConfiguration ContainerRegistry App Storage; do
   az provider register --namespace Microsoft.$ns --wait
 done
 
@@ -84,13 +84,13 @@ az cosmosdb create \
   --capabilities EnableNoSQLVectorSearch
 
 
-have cosmosdb sql database show -a "$COSMOS" -g "$RG" -n ragdb || \
+have cosmosdb sql database show -a "$COSMOS" -g "$RG" -n "$COSMOS_DB_NAME" || \
 az cosmosdb sql database create \
-  --account "$COSMOS" --resource-group "$RG" --name "ragdb"
+  --account "$COSMOS" --resource-group "$RG" --name ""$COSMOS_DB_NAME""
 
-have cosmosdb sql container show -g "$RG" -a "$COSMOS" -d ragdb -n docs || \
-az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d ragdb -n docs \
-  --partition-key-path /id \
+have cosmosdb sql container show -g "$RG" -a "$COSMOS" -d "$COSMOS_DB_NAME" -n "$COSMOS_CONTAINER_NAME" || \
+az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d "$COSMOS_DB_NAME" -n "$COSMOS_CONTAINER_NAME" \
+  --partition-key-path /docId \
   --vector-embeddings '{"vectorEmbeddings":[{"path":"/embedding","dataType":"float32","distanceFunction":"cosine","dimensions":1536}]}' \
   --idx '{"indexingMode":"consistent","automatic":true,"includedPaths":[{"path":"/*"}],"excludedPaths":[{"path":"/embedding/*"}],"vectorIndexes":[{"path":"/embedding","type":"diskANN"}]}'
 
@@ -100,11 +100,7 @@ az monitor app-insights component create \
   --app "$APPINSIGHTS" --resource-group "$RG" --location "$LOC"
 
 log "Ensuring Redis $REDIS"
-# --module RediSearch: redisvl's SemanticCache is built on RediSearch (FT.* commands);
-#   without it the app dies with `unknown command 'FT._LIST'`. Modules are CREATE-TIME only.
-# --clustering-policy EnterpriseCluster: RediSearch is unsupported under the OSS cluster API,
-#   AND EnterpriseCluster exposes a single endpoint so the plain redis.Redis client (not
-#   RedisCluster) works without MOVED redirects. The auto-created 'default' DB inherits both.
+
 have redisenterprise show -n "$REDIS" -g "$RG" || \
 az redisenterprise create -n "$REDIS" -g "$RG" --sku "Balanced_B0" --location "$LOC" \
   --public-network-access Enabled \
@@ -132,5 +128,57 @@ az containerapp create -n "$APP" -g "$RG" --environment "$ACA_ENV" \
   --ingress external --target-port 8000 \
   --min-replicas 0 --max-replicas 2 \
   --env-vars APPCONFIG_ENDPOINT="$APPCONFIG_ENDPOINT"   # UNICO seed; ogni altro endpoint arriva da App Config
+
+log "Ensuring storage account $STORAGE_ACCOUNT"
+have storage account show -n "$STORAGE_ACCOUNT" -g "$RG" || \
+az storage account create -n "$STORAGE_ACCOUNT" -g "$RG" -l "$LOC" \
+  --identity-type SystemAssigned --sku Standard_LRS
+
+log "Ensuring blob storage $STORAGE_CONTAINER_NAME"
+have storage container-rm show -n "$STORAGE_CONTAINER_NAME" --account-name "$STORAGE_ACCOUNT" || \
+az storage container-rm create -n "$STORAGE_CONTAINER_NAME" --storage-account "$STORAGE_ACCOUNT"
+
+log "Ensuring service bus namespace $SBUS_NAMESPACE"
+have servicebus namespace show -n "$SBUS_NAMESPACE" -g "$RG" || \
+az servicebus namespace create -n "$SBUS_NAMESPACE" -g "$RG" \
+  --location "$LOC" --sku Standard --mi-system-assigned
+
+log "Ensuring service bus queue $SBUS_QUEUE"
+have servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" || \
+az servicebus queue create -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" \
+  --enable-session \
+  --enable-dead-lettering-on-message-expiration \
+  --lock-duration PT30S \
+  --max-delivery-count 3
+
+
+log "Ensuring service plan for functionapp $FUNCTIONAPP_SERVICE_PLAN"
+have functionapp plan show -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" --is-linux true || \
+az functionapp plan create -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" --sku B1 -l "$LOC"
+
+log "Ensuring functionapp $FUNCTIONAPP"
+have functionapp show -n "$FUNCTIONAPP" -g "$RG" || \
+az functionapp create -n "$FUNCTIONAPP" -g "$RG" \
+  --storage-account "$STORAGE_ACCOUNT" --plan "$FUNCTIONAPP_SERVICE_PLAN" \
+  --app-insights "$APPINSIGHTS" --assign-identity '[system]' \
+  --runtime "python"
+
+STORAGE_ACCOUNT_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RG" --query id -o tsv)
+SBUS_QUEUE_ID=$(az servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" --query id -o tsv)
+
+log "Ensure eventgrid subscription to storage account"
+have eventgrid system-topic show -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" || \
+az eventgrid system-topic create -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" \
+  --source "$STORAGE_ACCOUNT_ID" --topic-type Microsoft.Storage.StorageAccounts \
+  --mi-system-assigned
+
+have eventgrid system-topic event-subscription show -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" -g "$RG" || \
+az eventgrid system-topic event-subscription create -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" -g "$RG" \
+  --system-topic-name "$STORAGE_ACCOUNT_SYSTEM_TOPIC" \
+  --delivery-identity systemassigned \
+  --endpoint-type servicebusqueue --endpoint "$SBUS_QUEUE_ID" \
+  --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobDeleted \
+  --subject-begins-with /blobServices/default/containers/$STORAGE_CONTAINER_NAME/ \
+  --delivery-attribute-mapping SessionId dynamic data.url
 
 log "Provisioning done."

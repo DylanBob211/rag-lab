@@ -1,0 +1,8 @@
+.venv
+functions
+scripts
+.git
+.gitignore
+.ruff_cache
+__pycache__
+*.md
