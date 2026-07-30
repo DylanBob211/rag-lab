@@ -36,7 +36,7 @@ preflight() {
 preflight
 
 log "Registering needed providers"
-for ns in CognitiveServices DocumentDb Insights OperationalInsights Cache KeyVault AppConfiguration ContainerRegistry App Storage; do
+for ns in CognitiveServices DocumentDb Insights OperationalInsights Cache KeyVault AppConfiguration ContainerRegistry App Storage Web EventGrid; do
   az provider register --namespace Microsoft.$ns --wait
 done
 
@@ -141,7 +141,7 @@ az storage container-rm create -n "$STORAGE_CONTAINER_NAME" --storage-account "$
 log "Ensuring service bus namespace $SBUS_NAMESPACE"
 have servicebus namespace show -n "$SBUS_NAMESPACE" -g "$RG" || \
 az servicebus namespace create -n "$SBUS_NAMESPACE" -g "$RG" \
-  --location "$LOC" --sku Standard --mi-system-assigned
+  --location "$LOC" --sku Standard --identity systemassigned
 
 log "Ensuring service bus queue $SBUS_QUEUE"
 have servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" || \
@@ -153,30 +153,35 @@ az servicebus queue create -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAM
 
 
 log "Ensuring service plan for functionapp $FUNCTIONAPP_SERVICE_PLAN"
-have functionapp plan show -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" --is-linux true || \
-az functionapp plan create -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" --sku B1 -l "$LOC"
+have functionapp plan show -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" || \
+az functionapp plan create -n "$FUNCTIONAPP_SERVICE_PLAN" -g "$RG" --sku B1 -l "$LOC" --is-linux true 
 
 log "Ensuring functionapp $FUNCTIONAPP"
 have functionapp show -n "$FUNCTIONAPP" -g "$RG" || \
 az functionapp create -n "$FUNCTIONAPP" -g "$RG" \
   --storage-account "$STORAGE_ACCOUNT" --plan "$FUNCTIONAPP_SERVICE_PLAN" \
   --app-insights "$APPINSIGHTS" --assign-identity '[system]' \
-  --runtime "python"
+  --runtime "python" --functions-version 4
 
 STORAGE_ACCOUNT_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RG" --query id -o tsv)
 SBUS_QUEUE_ID=$(az servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" --query id -o tsv)
 
 log "Ensure eventgrid subscription to storage account"
 have eventgrid system-topic show -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" || \
-az eventgrid system-topic create -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" \
+az eventgrid system-topic create -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" -l "$LOC" \
   --source "$STORAGE_ACCOUNT_ID" --topic-type Microsoft.Storage.StorageAccounts \
-  --mi-system-assigned
+  --identity systemassigned
+EVENT_GRID_MI=$(az eventgrid system-topic show -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" --query identity.principalId -o tsv)
+az role assignment create \
+  --assignee-object-id "$EVENT_GRID_MI" --assignee-principal-type ServicePrincipal \
+  --role "Azure Service Bus Data Sender" --scope "$SBUS_QUEUE_ID"
 
-have eventgrid system-topic event-subscription show -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" -g "$RG" || \
-az eventgrid system-topic event-subscription create -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" -g "$RG" \
-  --system-topic-name "$STORAGE_ACCOUNT_SYSTEM_TOPIC" \
+have eventgrid event-subscription show --source-resource-id "$STORAGE_ACCOUNT_ID" -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" || \
+az eventgrid event-subscription create -n "$SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME" \
+  --source-resource-id "$STORAGE_ACCOUNT_ID" \
+  --delivery-identity-endpoint-type servicebusqueue \
   --delivery-identity systemassigned \
-  --endpoint-type servicebusqueue --endpoint "$SBUS_QUEUE_ID" \
+  --delivery-identity-endpoint "$SBUS_QUEUE_ID" \
   --included-event-types Microsoft.Storage.BlobCreated Microsoft.Storage.BlobDeleted \
   --subject-begins-with /blobServices/default/containers/$STORAGE_CONTAINER_NAME/ \
   --delivery-attribute-mapping SessionId dynamic data.url

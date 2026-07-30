@@ -29,7 +29,7 @@ log "Deploying $IMAGE (new revision)"
 az containerapp update -n "$APP" -g "$RG" --image "$IMAGE"
 
 log "Publishing function $FUNCTIONAPP (remote build)"
-( cd "$APP_ROOT/functions" && func azure functionapp publish "$FUNCTIONAPP" --build remote )
+( cd "$APP_ROOT/functions" && func azure functionapp publish "$FUNCTIONAPP" --build remote --python )
 
 FQDN=$(az containerapp show -n "$APP" -g "$RG" --query properties.configuration.ingress.fqdn -o tsv)
 log "Live: https://$FQDN/ask?question=..."

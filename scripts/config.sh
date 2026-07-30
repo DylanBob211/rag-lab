@@ -25,6 +25,9 @@ SECRET_URI=$(az keyvault secret set --vault-name "$KV" --name appinsights-cs --v
 az appconfig kv set-keyvault -n "$APPCONFIG" --auth-mode login --key APPINSIGHTS_CS --secret-identifier "$SECRET_URI" --yes
 
 APPCONFIG_ENDPOINT=$(az appconfig show -n "$APPCONFIG" -g "$RG" --query endpoint -o tsv)
-az functionapp config appsettings set -n "$FUNCTIONAPP" -g "$RG" --always-on true --settings \
+
+az functionapp config appsettings set -n "$FUNCTIONAPP" -g "$RG" --settings \
   SERVICEBUS_CONNECTION__fullyQualifiedNamespace="$SBUS_NAMESPACE.servicebus.windows.net" \
   APPCONFIG_ENDPOINT="$APPCONFIG_ENDPOINT"
+
+az functionapp config set -n "$FUNCTIONAPP" -g "$RG" --always-on true
