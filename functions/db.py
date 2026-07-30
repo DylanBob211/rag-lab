@@ -1,11 +1,11 @@
 from azure.cosmos.exceptions import CosmosResourceNotFoundError
-from config import container
+from config import get_container
 
 
 def upsert_header(
     docId: str, incoming_sequencer: str, chunks: list[str], deleted: bool
 ):
-    container.upsert_item(
+    get_container().upsert_item(
         {
             "id": docId,
             "docId": docId,
@@ -18,12 +18,13 @@ def upsert_header(
 
 def read_header(docId: str):
     try:
-        return container.read_item(item=docId, partition_key=docId)
+        return get_container().read_item(item=docId, partition_key=docId)
     except CosmosResourceNotFoundError:
         return None
 
 
 def cleanup_orphan_chunks(docId: str, chunks: list[str]):
+    container = get_container()
     orphans = container.query_items(
         """
           SELECT c.id FROM c 
@@ -40,6 +41,7 @@ def cleanup_orphan_chunks(docId: str, chunks: list[str]):
 
 
 def upsert_chunks(docId: str, chunks: list[str], embeddings: list[list[float]]):
+    container = get_container()
     for i, (c, e) in enumerate(zip(chunks, embeddings)):
         container.upsert_item(
             {
@@ -53,4 +55,4 @@ def upsert_chunks(docId: str, chunks: list[str], embeddings: list[list[float]]):
 
 
 def delete_all(docId: str):
-    container.delete_all_items_by_partition_key(partition_key=docId)
+    get_container().delete_all_items_by_partition_key(partition_key=docId)

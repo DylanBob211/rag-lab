@@ -1,5 +1,11 @@
 import azure.functions as func
-from config import sbus_queue, download_text, embed_batch, invalidate_cache
+from config import (
+    sbus_queue,
+    download_text,
+    embed_batch,
+    invalidate_cache,
+    init_telemetry,
+)
 from models import BlobEvent
 from chunking import chunk
 from db import (
@@ -21,6 +27,7 @@ app = func.FunctionApp()
     queue_name=sbus_queue,
 )
 def doc_sync(msg: func.ServiceBusMessage):
+    init_telemetry()
 
     body = msg.get_body().decode("utf-8")
     event = BlobEvent.model_validate_json(body)

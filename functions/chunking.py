@@ -1,8 +1,11 @@
+from functools import lru_cache
+
 import tiktoken
 
-# text-embedding-3-small -> encoding cl100k_base. Caricato una volta sola:
-# istanziarlo a ogni chiamata scaricherebbe/parserebbe la vocab ogni volta.
-_enc = tiktoken.get_encoding("cl100k_base")
+
+@lru_cache
+def _enc():
+    return tiktoken.get_encoding("cl100k_base")
 
 
 def _window(tokens: list[int], max_tokens: int, overlap: int) -> list[list[int]]:
@@ -29,7 +32,7 @@ def chunk(text: str, max_tokens: int = 256, overlap: int = 40) -> list[str]:
     current: list[int] = []
 
     for para in paragraphs:
-        ptoks = _enc.encode(para)
+        ptoks = _enc().encode(para)
 
         # Paragrafo piu' grande del budget: chiudi cio' che hai e spezzalo da
         # solo con la finestra fissa.
@@ -53,4 +56,4 @@ def chunk(text: str, max_tokens: int = 256, overlap: int = 40) -> list[str]:
     if current:
         chunks.append(current)
 
-    return [_enc.decode(c) for c in chunks]
+    return [_enc().decode(c) for c in chunks]
