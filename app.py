@@ -60,7 +60,7 @@ def ask(question: str) -> Answer:
             prompt=question,
             response=answer_text,
             vector=qv,
-            filters={"doc_ids": source_ids},
+            filters={"doc_ids": ",".join(source_ids)},
         )
         return Answer(answer=answer_text, cached=False)
 
