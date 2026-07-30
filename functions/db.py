@@ -55,4 +55,11 @@ def upsert_chunks(docId: str, chunks: list[str], embeddings: list[list[float]]):
 
 
 def delete_all(docId: str):
-    get_container().delete_all_items_by_partition_key(partition_key=docId)
+    container = get_container()
+    items = container.query_items(
+        "SELECT c.id FROM c WHERE c.docId = @docId",
+        parameters=[{"name": "@docId", "value": docId}],
+        partition_key=docId,
+    )
+    for item in items:
+        container.delete_item(item=item["id"], partition_key=docId)
