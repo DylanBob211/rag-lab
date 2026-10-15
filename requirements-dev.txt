@@ -1,0 +1,5 @@
+-r requirements.txt
+
+ruff==0.15.21
+pyright==1.1.411
+pytest==9.1.1

@@ -1,0 +1,6 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "exclude": ["**/.venv", "**/__pycache__", "functions/.python_packages"],
+  "executionEnvironments": [{ "root": "functions" }]
+}
