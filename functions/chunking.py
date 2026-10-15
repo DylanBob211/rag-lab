@@ -9,20 +9,20 @@ def _enc():
 
 
 def _window(tokens: list[int], max_tokens: int, overlap: int) -> list[list[int]]:
-    """Finestra scorrevole su una lista di token. Serve come fallback per un
-    singolo paragrafo piu' lungo del budget: li' non c'e' confine semantico da
-    rispettare, quindi si taglia a lunghezza fissa con overlap."""
+    """Sliding window over a list of tokens. Fallback for a single paragraph
+    longer than the budget: there's no semantic boundary to respect inside it,
+    so it is cut at a fixed length with overlap."""
     step = max_tokens - overlap
     return [tokens[i : i + max_tokens] for i in range(0, len(tokens), step)]
 
 
 def chunk(text: str, max_tokens: int = 256, overlap: int = 40) -> list[str]:
-    """Spezza `text` in chunk, ognuno <= max_tokens, impacchettando paragrafi
-    interi (split su riga vuota) e portandosi dietro ~`overlap` token di coda
-    tra chunk consecutivi. L'ordine della lista E' il chunkIndex.
+    """Split `text` into chunks of at most max_tokens each, packing whole
+    paragraphs (split on blank lines) and carrying ~`overlap` trailing tokens
+    over between consecutive chunks. The list order IS the chunkIndex.
 
-    Puro: testo -> lista di testi. Non sa nulla di embedding, id o Cosmos."""
-    assert 0 <= overlap < max_tokens, "overlap deve stare sotto max_tokens"
+    Pure: text -> list of texts. Knows nothing about embeddings, ids or Cosmos."""
+    assert 0 <= overlap < max_tokens, "overlap must be below max_tokens"
 
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     if not paragraphs:
@@ -34,8 +34,8 @@ def chunk(text: str, max_tokens: int = 256, overlap: int = 40) -> list[str]:
     for para in paragraphs:
         ptoks = _enc().encode(para)
 
-        # Paragrafo piu' grande del budget: chiudi cio' che hai e spezzalo da
-        # solo con la finestra fissa.
+        # Paragraph larger than the budget: close the current chunk and split
+        # this paragraph on its own with the fixed window.
         if len(ptoks) > max_tokens:
             if current:
                 chunks.append(current)
@@ -43,9 +43,9 @@ def chunk(text: str, max_tokens: int = 256, overlap: int = 40) -> list[str]:
             chunks.extend(_window(ptoks, max_tokens, overlap))
             continue
 
-        # Non ci sta: chiudi il chunk corrente e riparti portandoti dietro la
-        # coda come overlap. `keep` e' limitato cosi' overlap + nuovo paragrafo
-        # non sforano mai max_tokens (l'invariante di ogni chunk).
+        # Doesn't fit: close the current chunk and start a new one seeded with
+        # its tail as overlap. `keep` is capped so overlap + new paragraph never
+        # exceed max_tokens (the invariant of every chunk).
         if current and len(current) + len(ptoks) > max_tokens:
             chunks.append(current)
             keep = min(overlap, max_tokens - len(ptoks))

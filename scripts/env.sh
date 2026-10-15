@@ -30,7 +30,7 @@ export FUNCTIONAPP=ai200-funcapp-${SUFFIX}
 export STORAGE_ACCOUNT_SYSTEM_TOPIC=ai200-storage-account-topic-${SUFFIX}
 export SERVICE_BUS_STORAGE_ACCOUNT_SUBSCRIPTION_NAME=to-doc-sync
 
-# campi deployment-name | model | version | format | sku | capacity
+# fields: deployment-name | model | version | format | sku | capacity
 AOAI_DEPLOYMENTS=(
   "embedder|text-embedding-3-small|1|OpenAI|GlobalStandard|120"
   "chat|gpt-5-mini|2025-08-07|OpenAI|GlobalStandard|10"

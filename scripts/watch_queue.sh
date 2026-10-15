@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Tail della PROFONDITÀ della coda doc-sync (control plane, sempre disponibile).
-# Non legge i corpi dei messaggi — mostra i contatori: quanti attivi, quanti in
-# dead-letter, quanti "scheduled". Rinfresca ogni 2s.
+# Shows the depth of the doc-sync queue (control plane, always available).
+# It doesn't read message bodies, only the counters: active, dead-lettered and
+# scheduled messages. Refreshes every 2s.
 #
 #   ./scripts/watch_queue.sh
 #
-# Con la function spenta vedrai activeMessageCount salire e restare; con la
-# function accesa lo vedrai tornare a 0 quasi subito (la coda si drena).
-# deadLetterMessageCount > 0 = un messaggio ha superato maxDeliveryCount.
+# With the function stopped, activeMessageCount grows and stays up; with the
+# function running it drops back to 0 almost immediately (the queue drains).
+# deadLetterMessageCount > 0 means a message exceeded maxDeliveryCount.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,7 @@ source "$HERE/env.sh" >/dev/null
 
 while true; do
   clear
-  echo "coda $SBUS_QUEUE  @ $(date +%T)"
+  echo "queue $SBUS_QUEUE  @ $(date +%T)"
   az servicebus queue show \
     --resource-group "$RG" \
     --namespace-name "$SBUS_NAMESPACE" \
