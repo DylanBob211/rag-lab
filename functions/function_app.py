@@ -39,6 +39,9 @@ def doc_sync(msg: func.ServiceBusMessage):
     if header and header["sequencer"] >= incoming_sequencer:
         return
 
+    # Invalidate before writing, so cached answers about this document stop
+    # being served right away, and again after writing, to drop any answer
+    # that a concurrent query built from the old chunks and cached meanwhile.
     invalidate_cache(docId)
     if event.eventType == "Microsoft.Storage.BlobCreated":
         text = download_text(event.data.url)
@@ -50,6 +53,7 @@ def doc_sync(msg: func.ServiceBusMessage):
     elif event.eventType == "Microsoft.Storage.BlobDeleted":
         delete_all(docId)
         upsert_header(docId, incoming_sequencer, chunks=[], deleted=True)
+    invalidate_cache(docId)
 
 
 def get_partition_key(event: BlobEvent):
