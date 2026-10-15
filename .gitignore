@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .env
+.ruff_cache/
+.pytest_cache/
+.python_packages/
+local.settings.json
+
+# Cosmos change feed bookmark written by watch_changes.py
+.cf_token
