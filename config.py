@@ -8,7 +8,7 @@ from azure.appconfiguration.provider import load
 from redis_entraid.cred_provider import create_from_default_azure_credential
 from redis.client import Redis
 from redisvl.extensions.cache.llm import SemanticCache
-from redisvl.utils.vectorize import CustomTextVectorizer
+from redisvl.utils.vectorize import CustomVectorizer
 
 
 __all__ = ["aoai", "semantic_cache", "container"]
@@ -45,14 +45,16 @@ _cosmos_container_name = _configs["COSMOS_CONTAINER_NAME"]
 _db = _cosmos_client.get_database_client(_cosmos_db_name)
 container = _db.get_container_client(_cosmos_container_name)
 
+
+def _embed(text: str) -> list[float]:
+    response = aoai.embeddings.create(input=text, model="embedder", dimensions=1536)
+    return response.data[0].embedding
+
+
+# redisvl vectorizers are pydantic models with a custom __init__; pyright checks
+# the call against the model fields instead, hence the ignore.
 semantic_cache = SemanticCache(
     filterable_fields=[{"name": "doc_ids", "type": "tag"}],
     redis_client=_redis_client,
-    vectorizer=CustomTextVectorizer(
-        embed=lambda t: (
-            aoai.embeddings.create(input=t, model="embedder", dimensions=1536)
-            .data[0]
-            .embedding
-        )
-    ),
+    vectorizer=CustomVectorizer(embed=_embed),  # pyright: ignore[reportCallIssue]
 )

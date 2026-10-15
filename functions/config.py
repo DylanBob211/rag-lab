@@ -12,7 +12,7 @@ from redisvl.extensions.cache.llm import SemanticCache
 from openai import AzureOpenAI
 from redisvl.query.filter import Tag
 from redisvl.query import FilterQuery
-from redisvl.utils.vectorize import CustomTextVectorizer
+from redisvl.utils.vectorize import CustomVectorizer
 
 sbus_queue = environ["SBUS_QUEUE"]
 
@@ -52,6 +52,8 @@ def _aoai():
     )
 
 
+# redisvl vectorizers are pydantic models with a custom __init__; pyright checks
+# the call against the model fields instead, hence the ignore.
 @lru_cache
 def _cache():
     return SemanticCache(
@@ -64,14 +66,7 @@ def _cache():
                 scopes=("https://redis.azure.com/.default",)
             ),
         ),
-        vectorizer=CustomTextVectorizer(
-            embed=lambda t: (
-                _aoai()
-                .embeddings.create(input=t, model="embedder", dimensions=1536)
-                .data[0]
-                .embedding
-            )
-        ),
+        vectorizer=CustomVectorizer(embed=lambda t: embed_batch([t])[0]),  # pyright: ignore[reportCallIssue]
     )
 
 
