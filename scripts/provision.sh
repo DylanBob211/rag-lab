@@ -86,7 +86,7 @@ az cosmosdb create \
 
 have cosmosdb sql database show -a "$COSMOS" -g "$RG" -n "$COSMOS_DB_NAME" || \
 az cosmosdb sql database create \
-  --account "$COSMOS" --resource-group "$RG" --name ""$COSMOS_DB_NAME""
+  --account "$COSMOS" --resource-group "$RG" --name "$COSMOS_DB_NAME"
 
 have cosmosdb sql container show -g "$RG" -a "$COSMOS" -d "$COSMOS_DB_NAME" -n "$COSMOS_CONTAINER_NAME" || \
 az cosmosdb sql container create -g "$RG" -a "$COSMOS" -d "$COSMOS_DB_NAME" -n "$COSMOS_CONTAINER_NAME" \
@@ -127,7 +127,7 @@ az containerapp create -n "$APP" -g "$RG" --environment "$ACA_ENV" \
   --system-assigned \
   --ingress external --target-port 8000 \
   --min-replicas 0 --max-replicas 2 \
-  --env-vars APPCONFIG_ENDPOINT="$APPCONFIG_ENDPOINT"   # UNICO seed; ogni altro endpoint arriva da App Config
+  --env-vars APPCONFIG_ENDPOINT="$APPCONFIG_ENDPOINT"   # the only seed; every other setting comes from App Config
 
 log "Ensuring storage account $STORAGE_ACCOUNT"
 have storage account show -n "$STORAGE_ACCOUNT" -g "$RG" || \

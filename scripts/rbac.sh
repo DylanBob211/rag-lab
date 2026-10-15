@@ -6,100 +6,101 @@ source "$SCRIPT_DIR/env.sh"
 
 log() { echo "RBAC ==> $*" >&2; }
 
-# Resource ID risolti una volta sola: sono gli stessi per ogni profilo.
+# Resource IDs are resolved once: they are the same for every profile.
 AOAI_ID=$(az cognitiveservices account show --name "$AOAI" --resource-group "$RG" --query id -o tsv)
 KV_ID=$(az keyvault show --name "$KV" --resource-group "$RG" --query id -o tsv)
 APPCONFIG_ID=$(az appconfig show --name "$APPCONFIG" --resource-group "$RG" --query id -o tsv)
 ACR_ID=$(az acr show --name "$ACR" --resource-group "$RG" --query id -o tsv)
+STORAGE_ACCOUNT_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RG" --query id -o tsv)
+SBUS_QUEUE_ID=$(az servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" --query id -o tsv)
+
+# assign <principal-id> <principal-type> <role> <scope>
+# --assignee-object-id + --assignee-principal-type skip the Microsoft Graph
+# lookup, so a freshly created managed identity doesn't fail with
+# 'PrincipalNotFound' while Entra ID is still replicating it.
+assign() {
+  az role assignment create \
+    --assignee-object-id "$1" --assignee-principal-type "$2" \
+    --role "$3" --scope "$4"
+}
 
 # grant_data_roles <principal-id> <principal-type> <profile>
 #   principal-type : User | ServicePrincipal
-#   profile        : dev -> ruoli di SCRITTURA (Officer/Owner, Cosmos Contributor),
-#                           per ingest.py + config.sh. Niente AcrPull.
-#                    app -> ruoli di LETTURA (User/Reader, Cosmos Reader) + AcrPull.
-# La MECCANICA e' condivisa; cambiano solo i ruoli. Least privilege: lo sviluppatore
-# scrive config e dati, l'app runtime li legge soltanto (Cosmos) e usa la cache Redis.
+#   profile        : dev  -> write roles, so the developer can seed App Config,
+#                            Key Vault and Cosmos (config.sh, upload_corpus.sh).
+#                    func -> read config, write Cosmos (the ingestion function).
+#                    app  -> read-only everywhere, plus AcrPull (the query API).
+# The mechanics are shared; only the roles change (least privilege).
 grant_data_roles() {
   local pid="$1" ptype="$2" profile="$3"
   local kv_role appconf_role cosmos_role
 
   case "$profile" in
-    dev) kv_role="Key Vault Secrets Officer"
-         appconf_role="App Configuration Data Owner"
-         cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos Data Contributor (write)
-    func)kv_role="Key Vault Secrets User"
-         appconf_role="App Configuration Data Reader"  
-         cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos Data Contributor (write)
-    app) kv_role="Key Vault Secrets User"
-         appconf_role="App Configuration Data Reader"
-         cosmos_role="00000000-0000-0000-0000-000000000001" ;;  # Cosmos Data Reader (read-only)
-    *)   echo "profilo sconosciuto: $profile" >&2; return 1 ;;
+    dev)  kv_role="Key Vault Secrets Officer"
+          appconf_role="App Configuration Data Owner"
+          cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos DB Built-in Data Contributor
+    func) kv_role="Key Vault Secrets User"
+          appconf_role="App Configuration Data Reader"
+          cosmos_role="00000000-0000-0000-0000-000000000002" ;; # Cosmos DB Built-in Data Contributor
+    app)  kv_role="Key Vault Secrets User"
+          appconf_role="App Configuration Data Reader"
+          cosmos_role="00000000-0000-0000-0000-000000000001" ;; # Cosmos DB Built-in Data Reader
+    *)    echo "unknown profile: $profile" >&2; return 1 ;;
   esac
 
-  # Assegna un ruolo Azure RBAC "normale" a questo principal.
-  # --assignee-object-id + --assignee-principal-type: saltano il lookup su Entra
-  # Graph, quindi niente 'PrincipalNotFound' se la MI e' stata appena creata.
-  _assign() {
-    az role assignment create \
-      --assignee-object-id "$pid" --assignee-principal-type "$ptype" \
-      --role "$1" --scope "$2"
-  }
-
   log "[$profile] Cognitive Services OpenAI User"
-  _assign "Cognitive Services OpenAI User" "$AOAI_ID"
+  assign "$pid" "$ptype" "Cognitive Services OpenAI User" "$AOAI_ID"
   log "[$profile] $kv_role"
-  _assign "$kv_role" "$KV_ID"
+  assign "$pid" "$ptype" "$kv_role" "$KV_ID"
   log "[$profile] $appconf_role"
-  _assign "$appconf_role" "$APPCONFIG_ID"
+  assign "$pid" "$ptype" "$appconf_role" "$APPCONFIG_ID"
 
-  # AcrPull: solo l'app deve pullare l'immagine dal registry.
+  # Only the Container App pulls images from the registry.
   if [[ "$profile" == "app" ]]; then
     log "[$profile] AcrPull"
-    _assign "AcrPull" "$ACR_ID"
+    assign "$pid" "$ptype" "AcrPull" "$ACR_ID"
   fi
 
-  # --- Le DUE eccezioni DATA-PLANE (il trap: control-plane != data-plane) ---
-  # Cosmos: sistema RBAC dati PROPRIO, con GUID fissi (...001 reader, ...002 contributor).
+  # Two data-plane exceptions: these services don't use regular Azure RBAC for
+  # data access, so a control-plane role would not be enough.
+  # Cosmos DB has its own SQL role system with fixed built-in role GUIDs.
   log "[$profile] Cosmos data role ${cosmos_role##*-}"
   az cosmosdb sql role assignment create \
     --account-name "$COSMOS" --resource-group "$RG" \
     --principal-id "$pid" --scope "/" \
     --role-definition-id "$cosmos_role"
 
-  # Redis: access-policy assignment Entra propria. Nome univoco per principal.
-  log "[$profile] Redis access-policy"
+  # Azure Managed Redis uses access-policy assignments, one per principal.
+  log "[$profile] Redis access policy"
   az redisenterprise database access-policy-assignment create -g "$RG" \
     --cluster-name "$REDIS" --database-name default \
     --access-policy-assignment-name "$profile" --access-policy-name default \
     --object-id "$pid"
 }
 
-# 1) Lo sviluppatore (tu): serve SCRITTURA per caricare i doc (ingest.py) e
-#    popolare App Config + KV (config.sh).
+# 1) The developer running this script.
 ME=$(az ad signed-in-user show --query id -o tsv)
 grant_data_roles "$ME" User dev
 
-# 2) La managed identity della Container App: solo LETTURA + AcrPull.
-#    Richiede che provision.sh abbia gia' creato il GUSCIO dell'app (che conia la MI).
+# 2) The Container App's managed identity (created by provision.sh).
 APP_MI=$(az containerapp show -n "$APP" -g "$RG" --query identity.principalId -o tsv 2>/dev/null || true)
-if [[ -n "${APP_MI:-}" && "$APP_MI" != "null" ]]; then
+if [[ -n "$APP_MI" && "$APP_MI" != "null" ]]; then
   grant_data_roles "$APP_MI" ServicePrincipal app
 else
-  log "SKIP profilo 'app': la Container App '$APP' non esiste ancora (la crea provision.sh)."
+  log "SKIP profile 'app': Container App '$APP' does not exist yet (run provision.sh first)."
 fi
 
-FUNC_MI=$(az functionapp show -n "$FUNCTIONAPP" -g "$RG" --query identity.principalId -o tsv)
-
-if [[ -n "${FUNC_MI:-}" && "$FUNC_MI" != "null" ]]; then
+# 3) The Function App's managed identity (created by provision.sh).
+#    On top of the shared roles it reads blobs and consumes the Service Bus queue.
+#    The Event Grid -> Service Bus sender role is granted in provision.sh,
+#    because the event subscription can't be created without it.
+FUNC_MI=$(az functionapp show -n "$FUNCTIONAPP" -g "$RG" --query identity.principalId -o tsv 2>/dev/null || true)
+if [[ -n "$FUNC_MI" && "$FUNC_MI" != "null" ]]; then
   grant_data_roles "$FUNC_MI" ServicePrincipal func
+  log "[func] Azure Service Bus Data Receiver"
+  assign "$FUNC_MI" ServicePrincipal "Azure Service Bus Data Receiver" "$SBUS_QUEUE_ID"
+  log "[func] Storage Blob Data Reader"
+  assign "$FUNC_MI" ServicePrincipal "Storage Blob Data Reader" "$STORAGE_ACCOUNT_ID"
 else
-  log "SKIP profilo 'func': la Container App '$FUNCTIONAPP' non esiste ancora (la crea provision.sh)."
+  log "SKIP profile 'func': Function App '$FUNCTIONAPP' does not exist yet (run provision.sh first)."
 fi
-
-EVENT_GRID_MI=$(az eventgrid system-topic show -g "$RG" -n "$STORAGE_ACCOUNT_SYSTEM_TOPIC" --query identity.principalId -o tsv)
-STORAGE_ACCOUNT_ID=$(az storage account show -n "$STORAGE_ACCOUNT" -g "$RG" --query id -o tsv)
-SBUS_QUEUE_ID=$(az servicebus queue show -n "$SBUS_QUEUE" -g "$RG" --namespace-name "$SBUS_NAMESPACE" --query id -o tsv)
-az role assignment create --assignee "$EVENT_GRID_MI" --scope "$SBUS_QUEUE_ID" --role "Azure Service Bus Data Sender"
-az role assignment create --assignee "$FUNC_MI" --scope "$SBUS_QUEUE_ID" --role "Azure Service Bus Data Receiver"
-az role assignment create --assignee "$FUNC_MI" --scope "$STORAGE_ACCOUNT_ID" --role "Storage Blob Data Reader"
-
